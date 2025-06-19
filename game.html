@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2.5D Horror Maze</title>
+  <style>
+    html, body { margin: 0; padding: 0; overflow: hidden; background: black; }
+    canvas { display: block; }
+    .joystick {
+      position: fixed;
+      width: 100px; height: 100px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 50%;
+      bottom: 10%;
+      touch-action: none;
+    }
+    .stick {
+      width: 60px; height: 60px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 50%;
+      position: absolute;
+      left: 20px; top: 20px;
+    }
+    #leftJoystick { left: 20px; }
+    #rightJoystick { right: 20px; }
+    #endScreen {
+      position:fixed; top:0; left:0; right:0; bottom:0;
+      background:black; color:white; font-size:2em;
+      display:none; justify-content:center; align-items:center;
+      z-index:10;
+    }
+  </style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div class="joystick" id="leftJoystick"><div class="stick"></div></div>
+<div class="joystick" id="rightJoystick"><div class="stick"></div></div>
+<div id="endScreen">🎉 Ты выбрался из лабиринта!</div>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+canvas.width = innerWidth;
+canvas.height = innerHeight;
+
+const map = [
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,0,0,0,1,0,0,0,1,0,0,0,0,0,1],
+  [1,0,1,0,1,0,1,0,1,0,1,1,1,0,1],
+  [1,0,1,0,0,0,1,0,0,0,1,0,1,0,1],
+  [1,0,1,1,1,0,1,1,1,0,1,0,1,0,1],
+  [1,0,0,0,1,0,0,0,1,0,1,0,0,0,1],
+  [1,1,1,0,1,1,1,0,1,1,1,1,1,0,1],
+  [1,0,0,0,0,0,1,0,0,0,0,0,1,0,1],
+  [1,0,1,1,1,0,1,1,1,1,1,0,1,0,1],
+  [1,0,0,0,1,0,0,0,0,0,1,0,1,0,1],
+  [1,1,1,0,1,1,1,1,1,0,1,1,1,0,1],
+  [1,0,0,0,0,0,0,0,1,0,0,0,0,0,1],
+  [1,0,1,1,1,1,1,0,1,1,1,1,1,0,1],
+  [1,0,0,0,0,0,1,0,0,0,0,0,0,9,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+];
+
+let posX = 1.5, posY = 1.5;
+let dir = 0, move = 0, rot = 0;
+let screamerTime = 0;
+const monsters = [{x: 5.5, y: 5.5, seen: false}, {x: 8.5, y: 11.5, seen: false}];
+
+function draw() {
+  ctx.fillStyle = "#111";
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  const rays = canvas.width / 2;
+  const fov = Math.PI/3;
+
+  for (let i=0; i<rays; i++) {
+    const angle = dir - fov/2 + (i/rays)*fov;
+    let dist = 0, hit = false, type = 0;
+    let rayX = posX, rayY = posY;
+
+    while (!hit && dist < 20) {
+      rayX += Math.cos(angle) * 0.02;
+      rayY += Math.sin(angle) * 0.02;
+      dist += 0.02;
+      const cell = map[Math.floor(rayY)]?.[Math.floor(rayX)];
+      if (cell > 0) { hit = true; type = cell; }
+    }
+
+    const shade = Math.max(0, 255 - dist * 40);
+    const h = canvas.height / (dist * Math.cos(angle - dir));
+    const y = (canvas.height - h) / 2;
+    ctx.fillStyle = type === 9 ? "green" : `rgb(${shade},${shade},${shade})`;
+    ctx.fillRect(i * 2, y, 2, h);
+  }
+
+  // движение
+  const nx = posX + Math.cos(dir) * move;
+  const ny = posY + Math.sin(dir) * move;
+  if (map[Math.floor(ny)]?.[Math.floor(nx)] !== 1) {
+    posX = nx;
+    posY = ny;
+  }
+  dir += rot;
+
+  // монстры
+  for (let m of monsters) {
+    const dx = m.x - posX;
+    const dy = m.y - posY;
+    const d = Math.sqrt(dx*dx + dy*dy);
+    if (d < 1 && !m.seen) {
+      screamerTime = 30;
+      m.seen = true;
+    }
+  }
+
+  // скример
+  if (screamerTime > 0) {
+    ctx.fillStyle = "red";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = "white";
+    ctx.font = "bold 48px sans-serif";
+    ctx.fillText("👹 СКРИМЕР!", canvas.width/2 - 100, canvas.height/2);
+    screamerTime--;
+  }
+
+  // победа
+  if (map[Math.floor(posY)]?.[Math.floor(posX)] === 9) {
+    document.getElementById("endScreen").style.display = "flex";
+  }
+
+  requestAnimationFrame(draw);
+}
+draw();
+
+// джойстики с пониженной скоростью
+function setupJoystick(id, onMove) {
+  const stick = document.querySelector(id + " .stick");
+  let active = false, sx = 0, sy = 0;
+  document.getElementById(id.slice(1)).addEventListener("touchstart", e => {
+    const t = e.touches[0];
+    sx = t.clientX; sy = t.clientY; active = true;
+  });
+  document.getElementById(id.slice(1)).addEventListener("touchmove", e => {
+    if (!active) return;
+    const t = e.touches[0];
+    const dx = t.clientX - sx;
+    const dy = t.clientY - sy;
+    stick.style.transform = `translate(${dx}px,${dy}px)`;
+    onMove(dx, dy);
+  });
+  document.getElementById(id.slice(1)).addEventListener("touchend", () => {
+    stick.style.transform = `translate(0,0)`;
+    active = false;
+    onMove(0, 0);
+  });
+}
+
+setupJoystick("#leftJoystick", (x,y) => move = -y / 1000);   // 🔽 МЕДЛЕННЕЕ движение
+setupJoystick("#rightJoystick", (x,y) => rot = x / 1000);  // 🔽 МЕДЛЕННЕЕ поворот
+</script>
+</body>
+</html>
